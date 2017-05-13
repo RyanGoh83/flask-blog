@@ -6,11 +6,13 @@ from flask import Flask, render_template, request, session, \
 
 import sqlite3
 
+from functools import wraps
+
 #configuration
 
 DATABASE = 'blog.db'
-USERNAME = 'RyanGoh83'
-PASSWORD = 'IloveSecretSauce'
+USERNAME = 'admin'
+PASSWORD = 'admin'
 SECRET_KEY = '\x17\xa4\xc94. 0\x03\r\xc7\x96\xda\x7fk\x08\xef0\xa6\xe4\xf6\xb5^\x10\x8b'
 
 
@@ -23,6 +25,17 @@ app.config.from_object(__name__)
 #function used for connecting to the db
 def connect_db():
     return sqlite3.connect(app.config['DATABASE'])
+
+def login_required(test):
+	@wraps(test)
+	def wrap(*args, **kwargs):
+		if 'logged_in' in session:
+			return test(*args, **kwargs)
+			
+		else:
+			flash('You need to log in first!')
+			return redirect(url_for('login'))
+	return wrap
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -39,15 +52,35 @@ def login():
 	return render_template('login.html', error=error), status_code
 
 @app.route('/main')
-
+@login_required
+def main():
+	g.db = connect_db()
+	cur = g.db.execute('select * from posts')
+	posts = [dict(title=row[0], post=row[1]) for row in cur.fetchall()]
+	g.db.close()
+	return render_template('main.html', posts=posts)
+	
 @app.route('/logout')
 def logout():
 	session.pop('logged_in', None)
 	flash("You were logged out")
 	return redirect(url_for('login'))
 	
-def main():
-    return render_template('main.html')
+@app.route('/add', methods=['POST'])
+@login_required
+def add():
+	title = request.form['title']
+	post = request.form['post']
+	if not title or not post:
+		flash("All fields are required. Please try again.")
+		return redirect(url_for('main'))
+	else:
+		g.db = connect_db()
+		g.db.execute('insert into posts (title, post) values (?, ?)', [request.form['title'], request.form['post']])
+		g.db.commit()
+		g.db.close()
+		flash('New entry was successfully posted!')
+		return redirect(url_for('main'))
 
 
 if __name__ == '__main__':
